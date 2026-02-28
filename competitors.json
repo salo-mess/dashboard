@@ -1,0 +1,29 @@
+{
+  "directCompetitors": [
+    {"name": "USA Vein Clinics", "handle": "@usaveinclinics", "website": "usaveinclinics.com", "locations": "100+", "focus": "Nationwide vein treatment chain"},
+    {"name": "Center for Vein Restoration", "handle": "@vaborist", "website": "centerforvein.com", "locations": "100+", "focus": "Largest vein treatment provider"},
+    {"name": "Metro Vein Centers", "handle": "@metroveincenters", "website": "metroveincenters.com", "locations": "50+", "focus": "Midwest/East Coast focus"},
+    {"name": "Vein Clinics of America", "handle": "@veinclinics", "website": "veinclinics.com", "locations": "60+", "focus": "National chain"},
+    {"name": "AVLC (American Vein & Lymphatic)", "handle": "@avlcsocial", "website": "americanvein.com", "locations": "20+", "focus": "Lymphatic specialty"}
+  ],
+  "indirectCompetitors": [
+    {"name": "Medical Spas", "threat": "High", "reason": "Cosmetic vein treatments, spider vein removal"},
+    {"name": "Dermatology Clinics", "threat": "Medium", "reason": "Sclerotherapy, cosmetic procedures"},
+    {"name": "Plastic Surgery Centers", "threat": "Medium", "reason": "Aesthetic leg treatments"},
+    {"name": "Primary Care/Family Medicine", "threat": "Low", "reason": "First point of contact, referral control"},
+    {"name": "Interventional Radiology", "threat": "Medium", "reason": "Hospital-based vein procedures"},
+    {"name": "Telehealth Platforms", "threat": "Emerging", "reason": "Initial consultations, convenience factor"}
+  ],
+  "industryKeywords": [
+    "varicose veins treatment",
+    "spider vein removal",
+    "sclerotherapy",
+    "venous insufficiency",
+    "leg pain treatment",
+    "vein ablation",
+    "compression therapy",
+    "DVT prevention",
+    "lipedema treatment",
+    "lymphedema"
+  ]
+}

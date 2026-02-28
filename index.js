@@ -1,6 +1,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +22,33 @@ const basicAuth = (req, res, next) => {
 };
 
 app.use(basicAuth);
+
+// Fetch helper
+function fetchUrl(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+    client.get(url, { timeout: 10000 }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// Parse RSS
+function parseRSS(xml) {
+  const items = [];
+  const regex = /<item>[\s\S]*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g;
+  let match;
+  while ((match = regex.exec(xml)) !== null && items.length < 10) {
+    items.push({
+      title: match[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
+      link: match[2],
+      date: new Date(match[3]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    });
+  }
+  return items;
+}
 
 // Parse CSV
 function parseCSV(content) {
@@ -53,10 +82,10 @@ function parseCSV(content) {
   return data;
 }
 
-// Sentiment keywords
-const positiveWords = ['thank', 'thanks', 'love', 'great', 'amazing', 'awesome', 'excellent', 'good', 'best', 'wonderful', 'helpful', 'beautiful', 'happy', '❤️', '💙', '👍', '🙏', '😊', '🥰', 'appreciate', 'perfect'];
-const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'worst', 'horrible', 'disappointed', 'angry', 'frustrated', 'complain', 'problem', 'issue', 'scam', 'fake', '😡', '😤', '👎'];
-const questionWords = ['how', 'what', 'where', 'when', 'why', 'can', 'do you', 'is there', 'does', '?', 'help', 'need'];
+// Sentiment
+const positiveWords = ['thank', 'thanks', 'love', 'great', 'amazing', 'awesome', 'excellent', 'good', 'best', 'wonderful', 'helpful', '❤️', '💙', '👍', '🙏', '😊'];
+const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'worst', 'horrible', 'disappointed', 'angry', 'frustrated', 'scam', 'fake', '😡', '👎'];
+const questionWords = ['how', 'what', 'where', 'when', 'why', 'can', 'do you', 'is there', '?', 'help', 'need'];
 
 function analyzeSentiment(message) {
   const lower = message.toLowerCase();
@@ -73,26 +102,17 @@ function analyzeSentiment(message) {
 // Load data
 const perfData = parseCSV(fs.readFileSync(path.join(__dirname, 'data.csv'), 'utf8'));
 const inboxData = parseCSV(fs.readFileSync(path.join(__dirname, 'inbox.csv'), 'utf8'));
+const competitors = JSON.parse(fs.readFileSync(path.join(__dirname, 'competitors.json'), 'utf8'));
 
 // Process inbox
 const processedInbox = inboxData.map(row => {
   const message = row['Message'] || '';
   const msgType = row['Message Type'] || '';
-  const isPaid = msgType.toLowerCase().includes('ad');
-  return { date: row['Timestamp (ET)'] || '', network: row['Network'] || '', messageType: msgType, message, sentiment: analyzeSentiment(message), isPaid };
+  return { message, sentiment: analyzeSentiment(message), isPaid: msgType.toLowerCase().includes('ad') };
 });
-
 const organicInbox = processedInbox.filter(m => !m.isPaid);
 const paidInbox = processedInbox.filter(m => m.isPaid);
-
-const countSentiments = (arr) => ({
-  positive: arr.filter(m => m.sentiment === 'positive').length,
-  negative: arr.filter(m => m.sentiment === 'negative').length,
-  neutral: arr.filter(m => m.sentiment === 'neutral').length,
-  inquiry: arr.filter(m => m.sentiment === 'inquiry').length,
-  total: arr.length
-});
-
+const countSentiments = (arr) => ({ positive: arr.filter(m => m.sentiment === 'positive').length, negative: arr.filter(m => m.sentiment === 'negative').length, neutral: arr.filter(m => m.sentiment === 'neutral').length, inquiry: arr.filter(m => m.sentiment === 'inquiry').length, total: arr.length });
 const organicSentiment = countSentiments(organicInbox);
 const paidSentiment = countSentiments(paidInbox);
 const calcScore = (s) => s.total > 0 ? Math.round(((s.positive - s.negative) / s.total * 50) + 50) : 50;
@@ -102,65 +122,42 @@ function calculateMetrics(data) {
   const jan = data.filter(r => r.Date && r.Date.startsWith('01-'));
   const feb = data.filter(r => r.Date && r.Date.startsWith('02-'));
   const sum = (arr, key) => arr.reduce((s, r) => s + (parseInt(r[key]) || 0), 0);
-  const avg = (arr, key) => {
-    const vals = arr.map(r => parseFloat(r[key]) || 0).filter(v => v > 0);
-    return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
-  };
+  const avg = (arr, key) => { const vals = arr.map(r => parseFloat(r[key]) || 0).filter(v => v > 0); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; };
   const last = (arr, key) => arr.length ? (parseInt(arr[arr.length - 1][key]) || 0) : 0;
-  
   const calcMonth = (arr) => ({
-    impressions: sum(arr, 'Impressions'),
-    videoViews: sum(arr, 'Video Views'),
-    engagements: sum(arr, 'Engagements'),
-    reactions: sum(arr, 'Reactions'),
-    comments: sum(arr, 'Comments'),
-    shares: sum(arr, 'Shares'),
-    saves: sum(arr, 'Saves'),
-    postClicks: sum(arr, 'Post Link Clicks'),
-    otherClicks: sum(arr, 'Other Post Clicks'),
-    audienceEnd: last(arr, 'Audience') || 28475,
-    audienceGrowth: sum(arr, 'Net Audience Growth'),
-    postsPublished: sum(arr, 'Published Posts (Total)'),
-    messagesSent: sum(arr, 'Sent Messages (Total)'),
-    messagesReceived: sum(arr, 'Received Messages (Total)'),
-    reels: sum(arr, 'Sent Reels (Instagram)'),
-    stories: sum(arr, 'Sent Stories (Instagram)'),
-    igPosts: sum(arr, 'Sent Posts (Instagram)'),
-    adPosts: sum(arr, 'Sent Ad Posts (Facebook)'),
+    impressions: sum(arr, 'Impressions'), videoViews: sum(arr, 'Video Views'), engagements: sum(arr, 'Engagements'),
+    reactions: sum(arr, 'Reactions'), comments: sum(arr, 'Comments'), shares: sum(arr, 'Shares'), saves: sum(arr, 'Saves'),
+    postClicks: sum(arr, 'Post Link Clicks'), audienceEnd: last(arr, 'Audience') || 28475, audienceGrowth: sum(arr, 'Net Audience Growth'),
+    postsPublished: sum(arr, 'Published Posts (Total)'), reels: sum(arr, 'Sent Reels (Instagram)'), stories: sum(arr, 'Sent Stories (Instagram)'),
     adCommentsReceived: sum(arr, 'Received Ad Comments (Facebook)') + sum(arr, 'Received Ad Comments (Instagram)'),
     engagementRate: avg(arr, 'Engagement Rate (per Impression)')
   });
-  
-  return {
-    january: calcMonth(jan),
-    february: calcMonth(feb),
-    daily: data.map(r => ({
-      date: r.Date,
-      impressions: parseInt(r.Impressions) || 0,
-      videoViews: parseInt(r['Video Views']) || 0,
-      engagements: parseInt(r.Engagements) || 0,
-      audience: parseInt(r.Audience) || 0,
-      engagementRate: parseFloat(r['Engagement Rate (per Impression)']) || 0
-    }))
-  };
+  return { january: calcMonth(jan), february: calcMonth(feb), daily: data.map(r => ({ date: r.Date, impressions: parseInt(r.Impressions) || 0, engagements: parseInt(r.Engagements) || 0, audience: parseInt(r.Audience) || 0, engagementRate: parseFloat(r['Engagement Rate (per Impression)']) || 0 })) };
 }
 
 const metrics = calculateMetrics(perfData);
 const jan = metrics.january;
 const feb = metrics.february;
-
 const pctChange = (curr, prev) => prev ? Math.round(((curr - prev) / prev) * 100) : 0;
 const gauge = (val, target) => Math.min(100, Math.round((val / target) * 100));
-
-// Calculate content performance
-const totalPosts = jan.postsPublished + feb.postsPublished;
-const totalReels = jan.reels + feb.reels;
-const totalStories = jan.stories + feb.stories;
-const totalContent = totalPosts + totalReels + totalStories;
+const totalContent = jan.postsPublished + feb.postsPublished + jan.reels + feb.reels + jan.stories + feb.stories;
 const avgEngRate = ((jan.engagementRate + feb.engagementRate) / 2).toFixed(3);
-const videoPerPost = totalContent > 0 ? Math.round((jan.videoViews + feb.videoViews) / totalContent) : 0;
 
-app.get('/', (req, res) => {
+// Main route
+app.get('/', async (req, res) => {
+  // Fetch industry news
+  let industryNews = [], competitorNews = [], trendingTopics = [];
+  try {
+    const [industry, compNews, trends] = await Promise.all([
+      fetchUrl('https://news.google.com/rss/search?q=varicose+veins+treatment+OR+spider+veins+OR+vein+clinic&hl=en-US&gl=US&ceid=US:en').catch(() => ''),
+      fetchUrl('https://news.google.com/rss/search?q=USA+Vein+Clinics+OR+Center+for+Vein+Restoration+OR+vein+treatment+industry&hl=en-US&gl=US&ceid=US:en').catch(() => ''),
+      fetchUrl('https://news.google.com/rss/search?q=medical+aesthetics+OR+cosmetic+procedures+OR+minimally+invasive+treatment&hl=en-US&gl=US&ceid=US:en').catch(() => '')
+    ]);
+    industryNews = parseRSS(industry);
+    competitorNews = parseRSS(compNews);
+    trendingTopics = parseRSS(trends);
+  } catch (e) { console.error('News fetch error:', e.message); }
+
   const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -189,164 +186,155 @@ app.get('/', (req, res) => {
     .card-organic { border-left: 4px solid #4ade80; }
     .card-paid { border-left: 4px solid #f59e0b; }
     .card-content { border-left: 4px solid #8b5cf6; }
+    .card-listen { border-left: 4px solid #06b6d4; }
+    .card-compete { border-left: 4px solid #ec4899; }
     .card-title { font-size: 0.85rem; opacity: 0.7; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .card-value { font-size: 2rem; font-weight: 600; margin-bottom: 8px; }
-    .card-change { font-size: 0.85rem; display: flex; align-items: center; gap: 5px; }
+    .card-change { font-size: 0.85rem; }
     .positive { color: #4ade80; }
     .negative { color: #f87171; }
     .neutral { color: #fbbf24; }
-    .inquiry { color: #60a5fa; }
-    .gauge-container { position: relative; width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-top: 12px; overflow: hidden; }
+    .gauge-container { width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-top: 12px; overflow: hidden; }
     .gauge-fill { height: 100%; border-radius: 5px; }
     .gauge-green { background: linear-gradient(90deg, #4ade80, #22c55e); }
     .gauge-orange { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
     .gauge-purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
-    .gauge-blue { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
-    .gauge-label { display: flex; justify-content: space-between; font-size: 0.7rem; opacity: 0.5; margin-top: 4px; }
-    .comparison-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    .comparison-table th, .comparison-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
-    .comparison-table th { font-weight: 500; opacity: 0.7; font-size: 0.8rem; text-transform: uppercase; }
-    .comparison-table td:not(:first-child) { text-align: right; }
-    .sentiment-score { font-size: 2.5rem; font-weight: 700; text-align: center; margin: 10px 0; }
-    .sentiment-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
-    .sentiment-item { text-align: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; }
-    .sentiment-count { font-size: 1.3rem; font-weight: 600; }
-    .sentiment-label { font-size: 0.7rem; opacity: 0.7; margin-top: 2px; }
-    .message-list { max-height: 250px; overflow-y: auto; }
-    .message-item { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px; align-items: flex-start; }
-    .message-badge { padding: 2px 6px; border-radius: 10px; font-size: 0.65rem; font-weight: 500; }
-    .badge-positive { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
-    .badge-negative { background: rgba(248, 113, 113, 0.2); color: #f87171; }
-    .badge-neutral { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
-    .badge-inquiry { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-    .message-text { font-size: 0.8rem; line-height: 1.3; flex: 1; }
-    .chart-container { position: relative; height: 250px; margin-top: 15px; }
-    .month-badge { display: inline-block; padding: 3px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 500; }
-    .badge-jan { background: #3b82f6; }
-    .badge-feb { background: #8b5cf6; }
+    .gauge-cyan { background: linear-gradient(90deg, #22d3ee, #06b6d4); }
+    .gauge-pink { background: linear-gradient(90deg, #f472b6, #ec4899); }
     .divider { display: flex; align-items: center; gap: 15px; margin: 30px 0; }
     .divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
     .divider-text { font-size: 0.85rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
-    .refresh-note { text-align: center; opacity: 0.5; font-size: 0.75rem; margin-top: 30px; }
-    .type-label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; margin-left: 8px; }
-    .type-organic { background: #4ade80; color: #000; }
-    .type-paid { background: #f59e0b; color: #000; }
-    .type-content { background: #8b5cf6; color: #fff; }
+    .news-list { max-height: 300px; overflow-y: auto; }
+    .news-item { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .news-item:last-child { border-bottom: none; }
+    .news-item a { color: #fff; text-decoration: none; font-size: 0.9rem; line-height: 1.4; }
+    .news-item a:hover { color: #06b6d4; }
+    .news-date { font-size: 0.75rem; opacity: 0.5; margin-top: 4px; }
+    .competitor-card { padding: 15px; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 10px; }
+    .competitor-name { font-weight: 600; margin-bottom: 5px; }
+    .competitor-info { font-size: 0.8rem; opacity: 0.7; }
+    .threat-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 500; margin-left: 8px; }
+    .threat-high { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .threat-medium { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+    .threat-low { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+    .threat-emerging { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+    .insight-box { background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); padding: 15px; border-radius: 10px; margin-top: 15px; }
+    .insight-title { font-size: 0.85rem; font-weight: 600; color: #22d3ee; margin-bottom: 8px; }
+    .insight-text { font-size: 0.85rem; opacity: 0.8; line-height: 1.5; }
+    .chart-container { position: relative; height: 250px; margin-top: 15px; }
+    .comparison-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .comparison-table th, .comparison-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .comparison-table th { font-weight: 500; opacity: 0.7; font-size: 0.75rem; text-transform: uppercase; }
+    .comparison-table td:not(:first-child) { text-align: right; }
     .stat-highlight { background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); padding: 15px; border-radius: 12px; text-align: center; }
     .stat-big { font-size: 2.5rem; font-weight: 700; color: #a78bfa; }
     .stat-label { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; }
-    .demo-placeholder { background: rgba(255,255,255,0.03); border: 2px dashed rgba(255,255,255,0.1); border-radius: 12px; padding: 30px; text-align: center; }
-    .demo-placeholder-icon { font-size: 2rem; margin-bottom: 10px; }
-    .demo-placeholder-text { opacity: 0.5; font-size: 0.85rem; }
+    .month-badge { display: inline-block; padding: 3px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 500; }
+    .badge-jan { background: #3b82f6; }
+    .badge-feb { background: #8b5cf6; }
+    .refresh-note { text-align: center; opacity: 0.5; font-size: 0.75rem; margin-top: 30px; }
+    .keyword-tag { display: inline-block; padding: 4px 10px; margin: 3px; background: rgba(6, 182, 212, 0.2); border-radius: 15px; font-size: 0.75rem; color: #22d3ee; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>📊 VeinTreatmentClinic Analytics</h1>
-    <p class="subtitle">Instagram Performance Dashboard • January - February 2026</p>
+    <p class="subtitle">Performance + Social Listening + Competitive Intelligence</p>
     
-    <!-- CONTENT PERFORMANCE -->
+    <!-- SOCIAL LISTENING -->
     <div class="divider">
       <div class="divider-line"></div>
-      <div class="divider-text">🎬 Content Performance</div>
+      <div class="divider-text">👂 Social Listening & Industry Intel</div>
       <div class="divider-line"></div>
     </div>
     
     <div class="section">
-      <div class="grid grid-5">
-        <div class="card card-content">
-          <div class="card-title">Posts Published</div>
-          <div class="card-value">${totalPosts}</div>
-          <div class="card-change">${pctChange(feb.postsPublished, jan.postsPublished) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.postsPublished, jan.postsPublished))}% vs Jan</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${Math.min(100, totalPosts * 2)}%"></div></div>
-        </div>
-        <div class="card card-content">
-          <div class="card-title">Reels</div>
-          <div class="card-value">${totalReels}</div>
-          <div class="card-change">${pctChange(feb.reels, jan.reels) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.reels, jan.reels))}% vs Jan</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${Math.min(100, totalReels)}%"></div></div>
-        </div>
-        <div class="card card-content">
-          <div class="card-title">Stories</div>
-          <div class="card-value">${totalStories}</div>
-          <div class="card-change">${pctChange(feb.stories, jan.stories) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.stories, jan.stories))}% vs Jan</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${Math.min(100, totalStories / 2)}%"></div></div>
-        </div>
-        <div class="card card-content">
-          <div class="card-title">Video Views</div>
-          <div class="card-value">${((jan.videoViews + feb.videoViews) / 1000).toFixed(0)}K</div>
-          <div class="card-change">${pctChange(feb.videoViews, jan.videoViews) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.videoViews, jan.videoViews))}% vs Jan</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${gauge(jan.videoViews + feb.videoViews, 100000)}%"></div></div>
-        </div>
-        <div class="card card-content">
-          <div class="card-title">Post Link Clicks</div>
-          <div class="card-value">${jan.postClicks + feb.postClicks}</div>
-          <div class="card-change">${pctChange(feb.postClicks, jan.postClicks) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.postClicks, jan.postClicks))}% vs Jan</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${Math.min(100, (jan.postClicks + feb.postClicks) / 5)}%"></div></div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- ENGAGEMENT RATE -->
-    <div class="section">
-      <h2 class="section-title">📈 Engagement Rate</h2>
       <div class="grid grid-3">
-        <div class="card">
-          <div class="stat-highlight">
-            <div class="stat-big">${avgEngRate}%</div>
-            <div class="stat-label">Average Engagement Rate</div>
+        <div class="card card-listen">
+          <div class="card-title">🔬 Industry News</div>
+          <div class="news-list">
+            ${industryNews.length > 0 ? industryNews.map(n => `
+              <div class="news-item">
+                <a href="${n.link}" target="_blank">${n.title}</a>
+                <div class="news-date">${n.date}</div>
+              </div>
+            `).join('') : '<div style="opacity:0.5;padding:20px;text-align:center">Loading industry news...</div>'}
           </div>
-          <div class="gauge-container"><div class="gauge-fill gauge-blue" style="width: ${Math.min(100, parseFloat(avgEngRate) * 20)}%"></div></div>
-          <div class="gauge-label"><span>0%</span><span>Industry avg: 1-3%</span></div>
         </div>
-        <div class="card">
-          <div class="card-title">Engagement Rate Comparison</div>
-          <table class="comparison-table">
-            <tr><td>January</td><td>${jan.engagementRate.toFixed(3)}%</td></tr>
-            <tr><td>February</td><td>${feb.engagementRate.toFixed(3)}%</td></tr>
-            <tr><td>Change</td><td class="${pctChange(feb.engagementRate, jan.engagementRate) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.engagementRate, jan.engagementRate) >= 0 ? '+' : ''}${pctChange(feb.engagementRate, jan.engagementRate)}%</td></tr>
-          </table>
-        </div>
-        <div class="card">
-          <div class="card-title">Engagement per Content Piece</div>
-          <div style="margin-top:15px">
-            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1)">
-              <span>Avg Views/Content</span><strong>${videoPerPost.toLocaleString()}</strong>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1)">
-              <span>Avg Engagements/Day</span><strong>${Math.round((jan.engagements + feb.engagements) / 58)}</strong>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:8px 0">
-              <span>Saves/Post</span><strong>${totalPosts > 0 ? ((jan.saves + feb.saves) / totalPosts).toFixed(1) : 0}</strong>
-            </div>
+        
+        <div class="card card-listen">
+          <div class="card-title">📰 Competitor Mentions</div>
+          <div class="news-list">
+            ${competitorNews.length > 0 ? competitorNews.map(n => `
+              <div class="news-item">
+                <a href="${n.link}" target="_blank">${n.title}</a>
+                <div class="news-date">${n.date}</div>
+              </div>
+            `).join('') : '<div style="opacity:0.5;padding:20px;text-align:center">Loading competitor news...</div>'}
           </div>
+        </div>
+        
+        <div class="card card-listen">
+          <div class="card-title">🔥 Medical Aesthetics Trends</div>
+          <div class="news-list">
+            ${trendingTopics.length > 0 ? trendingTopics.map(n => `
+              <div class="news-item">
+                <a href="${n.link}" target="_blank">${n.title}</a>
+                <div class="news-date">${n.date}</div>
+              </div>
+            `).join('') : '<div style="opacity:0.5;padding:20px;text-align:center">Loading trends...</div>'}
+          </div>
+        </div>
+      </div>
+      
+      <div class="insight-box">
+        <div class="insight-title">💡 Tracking Keywords</div>
+        <div style="margin-top:10px">
+          ${competitors.industryKeywords.map(k => `<span class="keyword-tag">${k}</span>`).join('')}
         </div>
       </div>
     </div>
     
-    <!-- AUDIENCE DEMOGRAPHICS PLACEHOLDER -->
-    <div class="section">
-      <h2 class="section-title">👥 Audience Demographics & Watch Time</h2>
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="demo-placeholder">
-            <div class="demo-placeholder-icon">📊</div>
-            <div class="demo-placeholder-text">Demographics data not available in current export.<br>Send Meta Business Suite demographics export to enable.</div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="demo-placeholder">
-            <div class="demo-placeholder-icon">⏱️</div>
-            <div class="demo-placeholder-text">Average watch time not available in current export.<br>Send Instagram Insights export to enable.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- ORGANIC SECTION -->
+    <!-- COMPETITIVE ANALYSIS -->
     <div class="divider">
       <div class="divider-line"></div>
-      <div class="divider-text">🌱 Organic Performance</div>
+      <div class="divider-text">🎯 Competitive Analysis</div>
+      <div class="divider-line"></div>
+    </div>
+    
+    <div class="section">
+      <div class="grid grid-2">
+        <div class="card card-compete">
+          <div class="card-title">🏢 Direct Competitors</div>
+          ${competitors.directCompetitors.map(c => `
+            <div class="competitor-card">
+              <div class="competitor-name">${c.name}</div>
+              <div class="competitor-info">${c.handle} • ${c.locations} locations</div>
+              <div class="competitor-info" style="margin-top:5px">${c.focus}</div>
+            </div>
+          `).join('')}
+        </div>
+        
+        <div class="card card-compete">
+          <div class="card-title">⚠️ Indirect Competitors</div>
+          ${competitors.indirectCompetitors.map(c => `
+            <div class="competitor-card">
+              <div class="competitor-name">${c.name} <span class="threat-badge threat-${c.threat.toLowerCase()}">${c.threat}</span></div>
+              <div class="competitor-info">${c.reason}</div>
+            </div>
+          `).join('')}
+          <div class="insight-box">
+            <div class="insight-title">🚨 Emerging Threat</div>
+            <div class="insight-text">Telehealth platforms are entering the space — offering initial consultations and potentially capturing leads before they reach clinics.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- YOUR PERFORMANCE vs INDUSTRY -->
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-text">📈 Your Performance</div>
       <div class="divider-line"></div>
     </div>
     
@@ -355,185 +343,96 @@ app.get('/', (req, res) => {
         <div class="card card-organic">
           <div class="card-title">Impressions</div>
           <div class="card-value">${((jan.impressions + feb.impressions) / 1000000).toFixed(1)}M</div>
-          <div class="card-change ${pctChange(feb.impressions, jan.impressions) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.impressions, jan.impressions) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.impressions, jan.impressions))}%</div>
+          <div class="card-change ${pctChange(feb.impressions, jan.impressions) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.impressions, jan.impressions) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.impressions, jan.impressions))}% MoM</div>
           <div class="gauge-container"><div class="gauge-fill gauge-green" style="width: ${gauge(jan.impressions + feb.impressions, 30000000)}%"></div></div>
         </div>
         <div class="card card-organic">
-          <div class="card-title">Total Engagements</div>
+          <div class="card-title">Engagements</div>
           <div class="card-value">${(jan.engagements + feb.engagements).toLocaleString()}</div>
-          <div class="card-change ${pctChange(feb.engagements, jan.engagements) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.engagements, jan.engagements) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.engagements, jan.engagements))}%</div>
+          <div class="card-change ${pctChange(feb.engagements, jan.engagements) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.engagements, jan.engagements) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.engagements, jan.engagements))}% MoM</div>
           <div class="gauge-container"><div class="gauge-fill gauge-green" style="width: ${gauge(jan.engagements + feb.engagements, 2000)}%"></div></div>
         </div>
-        <div class="card card-organic">
-          <div class="card-title">Audience Growth</div>
-          <div class="card-value">+${(jan.audienceGrowth + feb.audienceGrowth).toLocaleString()}</div>
-          <div class="card-change ${pctChange(feb.audienceGrowth, jan.audienceGrowth) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.audienceGrowth, jan.audienceGrowth) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.audienceGrowth, jan.audienceGrowth))}%</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-green" style="width: ${gauge(jan.audienceGrowth + feb.audienceGrowth, 2000)}%"></div></div>
+        <div class="card card-content">
+          <div class="card-title">Engagement Rate</div>
+          <div class="card-value">${avgEngRate}%</div>
+          <div class="card-change" style="opacity:0.7">Industry avg: 1-3%</div>
+          <div class="gauge-container"><div class="gauge-fill gauge-purple" style="width: ${Math.min(100, parseFloat(avgEngRate) * 33)}%"></div></div>
         </div>
         <div class="card card-organic">
-          <div class="card-title">Organic Sentiment</div>
-          <div class="card-value">${calcScore(organicSentiment)}</div>
-          <div style="opacity:0.7;font-size:0.8rem">${organicSentiment.total} messages</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-green" style="width: ${calcScore(organicSentiment)}%"></div></div>
+          <div class="card-title">Audience</div>
+          <div class="card-value">${((feb.audienceEnd || 28475) / 1000).toFixed(1)}K</div>
+          <div class="card-change positive">+${(jan.audienceGrowth + feb.audienceGrowth).toLocaleString()} growth</div>
+          <div class="gauge-container"><div class="gauge-fill gauge-green" style="width: ${gauge(feb.audienceEnd || 28475, 50000)}%"></div></div>
         </div>
       </div>
     </div>
     
-    <!-- PAID SECTION -->
-    <div class="divider">
-      <div class="divider-line"></div>
-      <div class="divider-text">💰 Paid Performance</div>
-      <div class="divider-line"></div>
-    </div>
-    
-    <div class="section">
-      <div class="grid grid-4">
-        <div class="card card-paid">
-          <div class="card-title">Ad Comments</div>
-          <div class="card-value">${(jan.adCommentsReceived + feb.adCommentsReceived).toLocaleString()}</div>
-          <div class="card-change ${pctChange(feb.adCommentsReceived, jan.adCommentsReceived) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.adCommentsReceived, jan.adCommentsReceived) >= 0 ? '↑' : '↓'} ${Math.abs(pctChange(feb.adCommentsReceived, jan.adCommentsReceived))}%</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-orange" style="width: ${Math.min(100, (jan.adCommentsReceived + feb.adCommentsReceived) / 2)}%"></div></div>
-        </div>
-        <div class="card card-paid">
-          <div class="card-title">Paid Messages</div>
-          <div class="card-value">${paidSentiment.total}</div>
-          <div style="opacity:0.7;font-size:0.8rem">from ads</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-orange" style="width: ${Math.min(100, paidSentiment.total * 3)}%"></div></div>
-        </div>
-        <div class="card card-paid">
-          <div class="card-title">Paid Sentiment</div>
-          <div class="card-value">${calcScore(paidSentiment)}</div>
-          <div style="opacity:0.7;font-size:0.8rem">${calcScore(paidSentiment) >= 60 ? '😊 Positive' : '😐 Neutral'}</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-orange" style="width: ${calcScore(paidSentiment)}%"></div></div>
-        </div>
-        <div class="card card-paid">
-          <div class="card-title">Paid Inquiries</div>
-          <div class="card-value">${paidSentiment.inquiry}</div>
-          <div style="opacity:0.7;font-size:0.8rem">potential leads</div>
-          <div class="gauge-container"><div class="gauge-fill gauge-orange" style="width: ${Math.min(100, paidSentiment.inquiry * 10)}%"></div></div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- MONTHLY COMPARISON -->
-    <div class="divider">
-      <div class="divider-line"></div>
-      <div class="divider-text">📅 Monthly Comparison</div>
-      <div class="divider-line"></div>
-    </div>
-    
+    <!-- CONTENT & PAID -->
     <div class="section">
       <div class="grid grid-2">
         <div class="card">
-          <div class="card-title">Organic Metrics <span class="type-label type-organic">ORGANIC</span></div>
-          <table class="comparison-table">
-            <thead><tr><th>Metric</th><th><span class="month-badge badge-jan">Jan</span></th><th><span class="month-badge badge-feb">Feb</span></th><th>Δ</th></tr></thead>
-            <tbody>
-              <tr><td>Impressions</td><td>${(jan.impressions/1e6).toFixed(2)}M</td><td>${(feb.impressions/1e6).toFixed(2)}M</td><td class="${pctChange(feb.impressions, jan.impressions) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.impressions, jan.impressions) >= 0 ? '+' : ''}${pctChange(feb.impressions, jan.impressions)}%</td></tr>
-              <tr><td>Video Views</td><td>${(jan.videoViews/1e3).toFixed(1)}K</td><td>${(feb.videoViews/1e3).toFixed(1)}K</td><td class="${pctChange(feb.videoViews, jan.videoViews) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.videoViews, jan.videoViews) >= 0 ? '+' : ''}${pctChange(feb.videoViews, jan.videoViews)}%</td></tr>
-              <tr><td>Engagements</td><td>${jan.engagements}</td><td>${feb.engagements}</td><td class="${pctChange(feb.engagements, jan.engagements) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.engagements, jan.engagements) >= 0 ? '+' : ''}${pctChange(feb.engagements, jan.engagements)}%</td></tr>
-              <tr><td>Engagement Rate</td><td>${jan.engagementRate.toFixed(2)}%</td><td>${feb.engagementRate.toFixed(2)}%</td><td class="${pctChange(feb.engagementRate, jan.engagementRate) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.engagementRate, jan.engagementRate) >= 0 ? '+' : ''}${pctChange(feb.engagementRate, jan.engagementRate)}%</td></tr>
-              <tr><td>Reactions</td><td>${jan.reactions}</td><td>${feb.reactions}</td><td class="${pctChange(feb.reactions, jan.reactions) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.reactions, jan.reactions) >= 0 ? '+' : ''}${pctChange(feb.reactions, jan.reactions)}%</td></tr>
-              <tr><td>Audience Growth</td><td>+${jan.audienceGrowth}</td><td>+${feb.audienceGrowth}</td><td class="${pctChange(feb.audienceGrowth, jan.audienceGrowth) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.audienceGrowth, jan.audienceGrowth) >= 0 ? '+' : ''}${pctChange(feb.audienceGrowth, jan.audienceGrowth)}%</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="card">
-          <div class="card-title">Content Metrics <span class="type-label type-content">CONTENT</span></div>
+          <div class="card-title">Content Performance <span style="color:#8b5cf6">ORGANIC</span></div>
           <table class="comparison-table">
             <thead><tr><th>Metric</th><th><span class="month-badge badge-jan">Jan</span></th><th><span class="month-badge badge-feb">Feb</span></th><th>Δ</th></tr></thead>
             <tbody>
               <tr><td>Posts</td><td>${jan.postsPublished}</td><td>${feb.postsPublished}</td><td class="${pctChange(feb.postsPublished, jan.postsPublished) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.postsPublished, jan.postsPublished) >= 0 ? '+' : ''}${pctChange(feb.postsPublished, jan.postsPublished)}%</td></tr>
               <tr><td>Reels</td><td>${jan.reels}</td><td>${feb.reels}</td><td class="${pctChange(feb.reels, jan.reels) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.reels, jan.reels) >= 0 ? '+' : ''}${pctChange(feb.reels, jan.reels)}%</td></tr>
               <tr><td>Stories</td><td>${jan.stories}</td><td>${feb.stories}</td><td class="${pctChange(feb.stories, jan.stories) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.stories, jan.stories) >= 0 ? '+' : ''}${pctChange(feb.stories, jan.stories)}%</td></tr>
-              <tr><td>Link Clicks</td><td>${jan.postClicks}</td><td>${feb.postClicks}</td><td class="${pctChange(feb.postClicks, jan.postClicks) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.postClicks, jan.postClicks) >= 0 ? '+' : ''}${pctChange(feb.postClicks, jan.postClicks)}%</td></tr>
+              <tr><td>Reactions</td><td>${jan.reactions}</td><td>${feb.reactions}</td><td class="${pctChange(feb.reactions, jan.reactions) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.reactions, jan.reactions) >= 0 ? '+' : ''}${pctChange(feb.reactions, jan.reactions)}%</td></tr>
               <tr><td>Shares</td><td>${jan.shares}</td><td>${feb.shares}</td><td class="${pctChange(feb.shares, jan.shares) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.shares, jan.shares) >= 0 ? '+' : ''}${pctChange(feb.shares, jan.shares)}%</td></tr>
               <tr><td>Saves</td><td>${jan.saves}</td><td>${feb.saves}</td><td class="${pctChange(feb.saves, jan.saves) >= 0 ? 'positive' : 'negative'}">${pctChange(feb.saves, jan.saves) >= 0 ? '+' : ''}${pctChange(feb.saves, jan.saves)}%</td></tr>
             </tbody>
           </table>
         </div>
+        <div class="card">
+          <div class="card-title">Paid & Sentiment <span style="color:#f59e0b">PAID</span></div>
+          <table class="comparison-table">
+            <tbody>
+              <tr><td>Ad Comments</td><td colspan="2">${(jan.adCommentsReceived + feb.adCommentsReceived)}</td><td>${pctChange(feb.adCommentsReceived, jan.adCommentsReceived) >= 0 ? '+' : ''}${pctChange(feb.adCommentsReceived, jan.adCommentsReceived)}%</td></tr>
+              <tr><td>Paid Messages</td><td colspan="2">${paidSentiment.total}</td><td>-</td></tr>
+              <tr><td>Paid Sentiment</td><td colspan="2">${calcScore(paidSentiment)}/100</td><td>${calcScore(paidSentiment) >= 50 ? '😊' : '😐'}</td></tr>
+              <tr><td>Paid Inquiries</td><td colspan="2">${paidSentiment.inquiry}</td><td>leads</td></tr>
+            </tbody>
+          </table>
+          <div style="margin-top:15px;padding-top:15px;border-top:1px solid rgba(255,255,255,0.1)">
+            <div class="card-title">Organic Sentiment</div>
+            <div style="display:flex;gap:15px;margin-top:10px">
+              <div style="flex:1;text-align:center"><div style="font-size:1.5rem;color:#4ade80">${organicSentiment.positive}</div><div style="font-size:0.7rem;opacity:0.7">Positive</div></div>
+              <div style="flex:1;text-align:center"><div style="font-size:1.5rem;color:#fbbf24">${organicSentiment.neutral}</div><div style="font-size:0.7rem;opacity:0.7">Neutral</div></div>
+              <div style="flex:1;text-align:center"><div style="font-size:1.5rem;color:#f87171">${organicSentiment.negative}</div><div style="font-size:0.7rem;opacity:0.7">Negative</div></div>
+              <div style="flex:1;text-align:center"><div style="font-size:1.5rem;color:#60a5fa">${organicSentiment.inquiry}</div><div style="font-size:0.7rem;opacity:0.7">Inquiries</div></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     
-    <!-- Charts -->
+    <!-- CHARTS -->
     <div class="section">
-      <h2 class="section-title">📉 Trends</h2>
       <div class="grid grid-2">
         <div class="card">
-          <div class="card-title">Engagement Rate Over Time</div>
+          <div class="card-title">Engagement Rate Trend</div>
           <div class="chart-container"><canvas id="engRateChart"></canvas></div>
         </div>
         <div class="card">
-          <div class="card-title">Impressions & Engagements</div>
+          <div class="card-title">Impressions Over Time</div>
           <div class="chart-container"><canvas id="trendsChart"></canvas></div>
         </div>
       </div>
     </div>
     
-    <p class="refresh-note">Data: Jan 1 - Feb 27, 2026 • @veintreatmentclinic • Content: ${totalContent} pieces | Organic: ${organicSentiment.total} msgs | Paid: ${paidSentiment.total} msgs</p>
+    <p class="refresh-note">Data: Jan 1 - Feb 27, 2026 • @veintreatmentclinic • Last updated: ${new Date().toLocaleString()}</p>
   </div>
   
   <script>
     const dailyData = ${JSON.stringify(metrics.daily)};
-    
-    // Engagement Rate Chart
     new Chart(document.getElementById('engRateChart'), {
-      type: 'line',
-      data: {
-        labels: dailyData.filter(d => d.engagementRate > 0).map(d => d.date),
-        datasets: [{
-          label: 'Engagement Rate %',
-          data: dailyData.filter(d => d.engagementRate > 0).map(d => d.engagementRate),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(139,92,246,0.1)',
-          fill: true,
-          tension: 0.4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#fff' } } },
-        scales: {
-          x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          y: { ticks: { color: '#8b5cf6', callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.05)' } }
-        }
-      }
+      type: 'line', data: { labels: dailyData.filter(d => d.engagementRate > 0).map(d => d.date), datasets: [{ label: 'Eng Rate %', data: dailyData.filter(d => d.engagementRate > 0).map(d => d.engagementRate), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#fff' } } }, scales: { x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#8b5cf6' }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
     });
-    
-    // Trends Chart
     new Chart(document.getElementById('trendsChart'), {
-      type: 'line',
-      data: {
-        labels: dailyData.map(d => d.date),
-        datasets: [{
-          label: 'Impressions',
-          data: dailyData.map(d => d.impressions),
-          borderColor: '#4ade80',
-          backgroundColor: 'rgba(74,222,128,0.1)',
-          fill: true,
-          tension: 0.4,
-          yAxisID: 'y'
-        }, {
-          label: 'Engagements',
-          data: dailyData.map(d => d.engagements),
-          borderColor: '#f59e0b',
-          backgroundColor: 'rgba(245,158,11,0.1)',
-          fill: true,
-          tension: 0.4,
-          yAxisID: 'y1'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#fff' } } },
-        scales: {
-          x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          y: { position: 'left', ticks: { color: '#4ade80' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          y1: { position: 'right', ticks: { color: '#f59e0b' }, grid: { display: false } }
-        }
-      }
+      type: 'line', data: { labels: dailyData.map(d => d.date), datasets: [{ label: 'Impressions', data: dailyData.map(d => d.impressions), borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', fill: true, tension: 0.4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#fff' } } }, scales: { x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#4ade80' }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
     });
   </script>
 </body>
