@@ -14,6 +14,83 @@
     {"name": "Interventional Radiology", "threat": "Medium", "reason": "Hospital-based vein procedures"},
     {"name": "Telehealth Platforms", "threat": "Emerging", "reason": "Initial consultations, convenience factor"}
   ],
+  "keywordClusters": [
+    {
+      "name": "Core Conditions",
+      "icon": "🩺",
+      "color": "#ef4444",
+      "keywords": [
+        {"term": "varicose veins", "volume": 165000, "difficulty": "high", "intent": "informational", "trend": "stable"},
+        {"term": "spider veins", "volume": 90500, "difficulty": "high", "intent": "informational", "trend": "stable"},
+        {"term": "venous insufficiency", "volume": 33100, "difficulty": "medium", "intent": "informational", "trend": "up"},
+        {"term": "deep vein thrombosis", "volume": 110000, "difficulty": "high", "intent": "informational", "trend": "stable"},
+        {"term": "blood clot in leg", "volume": 74000, "difficulty": "medium", "intent": "urgent", "trend": "stable"}
+      ]
+    },
+    {
+      "name": "Treatment Searches",
+      "icon": "💉",
+      "color": "#8b5cf6",
+      "keywords": [
+        {"term": "varicose vein treatment", "volume": 22200, "difficulty": "high", "intent": "transactional", "trend": "up"},
+        {"term": "sclerotherapy", "volume": 40500, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "vein ablation", "volume": 8100, "difficulty": "low", "intent": "transactional", "trend": "up"},
+        {"term": "laser vein removal", "volume": 14800, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "spider vein removal", "volume": 18100, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "endovenous ablation", "volume": 4400, "difficulty": "low", "intent": "transactional", "trend": "up"},
+        {"term": "radiofrequency ablation veins", "volume": 2900, "difficulty": "low", "intent": "transactional", "trend": "up"}
+      ]
+    },
+    {
+      "name": "Symptom-Based",
+      "icon": "🦵",
+      "color": "#f59e0b",
+      "keywords": [
+        {"term": "leg pain", "volume": 135000, "difficulty": "high", "intent": "informational", "trend": "stable"},
+        {"term": "swollen legs", "volume": 49500, "difficulty": "medium", "intent": "informational", "trend": "stable"},
+        {"term": "leg cramps at night", "volume": 60500, "difficulty": "medium", "intent": "informational", "trend": "stable"},
+        {"term": "heavy legs", "volume": 27100, "difficulty": "low", "intent": "informational", "trend": "stable"},
+        {"term": "restless legs", "volume": 90500, "difficulty": "high", "intent": "informational", "trend": "stable"},
+        {"term": "bulging veins in legs", "volume": 12100, "difficulty": "low", "intent": "informational", "trend": "up"}
+      ]
+    },
+    {
+      "name": "Cost & Insurance",
+      "icon": "💰",
+      "color": "#22c55e",
+      "keywords": [
+        {"term": "varicose vein treatment cost", "volume": 8100, "difficulty": "medium", "intent": "transactional", "trend": "up"},
+        {"term": "sclerotherapy cost", "volume": 9900, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "does insurance cover varicose vein treatment", "volume": 3600, "difficulty": "low", "intent": "transactional", "trend": "up"},
+        {"term": "spider vein removal cost", "volume": 6600, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "vein treatment covered by medicare", "volume": 1900, "difficulty": "low", "intent": "transactional", "trend": "up"}
+      ]
+    },
+    {
+      "name": "Local Intent",
+      "icon": "📍",
+      "color": "#06b6d4",
+      "keywords": [
+        {"term": "vein clinic near me", "volume": 14800, "difficulty": "high", "intent": "transactional", "trend": "up"},
+        {"term": "vein doctor near me", "volume": 12100, "difficulty": "high", "intent": "transactional", "trend": "up"},
+        {"term": "vein specialist", "volume": 18100, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "phlebologist near me", "volume": 2400, "difficulty": "low", "intent": "transactional", "trend": "stable"},
+        {"term": "varicose vein doctor", "volume": 5400, "difficulty": "medium", "intent": "transactional", "trend": "stable"}
+      ]
+    },
+    {
+      "name": "Related Conditions",
+      "icon": "🔗",
+      "color": "#ec4899",
+      "keywords": [
+        {"term": "lipedema", "volume": 49500, "difficulty": "medium", "intent": "informational", "trend": "up"},
+        {"term": "lymphedema", "volume": 74000, "difficulty": "medium", "intent": "informational", "trend": "stable"},
+        {"term": "compression socks", "volume": 110000, "difficulty": "high", "intent": "transactional", "trend": "stable"},
+        {"term": "DVT symptoms", "volume": 33100, "difficulty": "medium", "intent": "urgent", "trend": "stable"},
+        {"term": "chronic venous insufficiency", "volume": 22200, "difficulty": "medium", "intent": "informational", "trend": "up"}
+      ]
+    }
+  ],
   "industryKeywords": [
     "varicose veins treatment",
     "spider vein removal",

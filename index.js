@@ -287,10 +287,85 @@ app.get('/', async (req, res) => {
         </div>
       </div>
       
-      <div class="insight-box">
-        <div class="insight-title">💡 Tracking Keywords</div>
-        <div style="margin-top:10px">
-          ${competitors.industryKeywords.map(k => `<span class="keyword-tag">${k}</span>`).join('')}
+      <!-- ENHANCED KEYWORD TRACKING -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title" style="font-size:1.1rem;margin-bottom:20px">🔍 Keyword Intelligence - Search Volume & Clusters</div>
+        
+        <!-- Volume Summary -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:25px">
+          <div style="background:rgba(239,68,68,0.1);padding:15px;border-radius:10px;text-align:center;border:1px solid rgba(239,68,68,0.3)">
+            <div style="font-size:1.8rem;font-weight:700;color:#ef4444">${((competitors.keywordClusters.reduce((sum, c) => sum + c.keywords.reduce((s, k) => s + k.volume, 0), 0)) / 1000000).toFixed(1)}M</div>
+            <div style="font-size:0.75rem;opacity:0.7">Total Search Volume/mo</div>
+          </div>
+          <div style="background:rgba(139,92,246,0.1);padding:15px;border-radius:10px;text-align:center;border:1px solid rgba(139,92,246,0.3)">
+            <div style="font-size:1.8rem;font-weight:700;color:#8b5cf6">${competitors.keywordClusters.reduce((sum, c) => sum + c.keywords.length, 0)}</div>
+            <div style="font-size:0.75rem;opacity:0.7">Keywords Tracked</div>
+          </div>
+          <div style="background:rgba(34,197,94,0.1);padding:15px;border-radius:10px;text-align:center;border:1px solid rgba(34,197,94,0.3)">
+            <div style="font-size:1.8rem;font-weight:700;color:#22c55e">${competitors.keywordClusters.reduce((sum, c) => sum + c.keywords.filter(k => k.trend === 'up').length, 0)}</div>
+            <div style="font-size:0.75rem;opacity:0.7">Trending Up ↑</div>
+          </div>
+          <div style="background:rgba(6,182,212,0.1);padding:15px;border-radius:10px;text-align:center;border:1px solid rgba(6,182,212,0.3)">
+            <div style="font-size:1.8rem;font-weight:700;color:#06b6d4">${competitors.keywordClusters.reduce((sum, c) => sum + c.keywords.filter(k => k.intent === 'transactional').length, 0)}</div>
+            <div style="font-size:0.75rem;opacity:0.7">High-Intent Keywords</div>
+          </div>
+        </div>
+        
+        <!-- Keyword Clusters -->
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px">
+          ${competitors.keywordClusters.map(cluster => `
+            <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:15px;border-left:4px solid ${cluster.color}">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <div style="font-weight:600;font-size:0.95rem">${cluster.icon} ${cluster.name}</div>
+                <div style="font-size:0.7rem;opacity:0.6">${(cluster.keywords.reduce((s, k) => s + k.volume, 0) / 1000).toFixed(0)}K vol/mo</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                ${cluster.keywords.sort((a, b) => b.volume - a.volume).map(kw => `
+                  <div style="display:flex;align-items:center;gap:8px;font-size:0.8rem">
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <span style="opacity:0.9">${kw.term}</span>
+                      ${kw.trend === 'up' ? '<span style="color:#22c55e;font-size:0.7rem">↑</span>' : ''}
+                    </div>
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:8px;font-size:0.65rem;min-width:45px;text-align:right">${kw.volume >= 100000 ? (kw.volume / 1000).toFixed(0) + 'K' : kw.volume >= 1000 ? (kw.volume / 1000).toFixed(1) + 'K' : kw.volume}</span>
+                      <span style="padding:2px 5px;border-radius:6px;font-size:0.6rem;${kw.intent === 'transactional' ? 'background:rgba(34,197,94,0.2);color:#4ade80' : kw.intent === 'urgent' ? 'background:rgba(239,68,68,0.2);color:#f87171' : 'background:rgba(96,165,250,0.2);color:#60a5fa'}">${kw.intent === 'transactional' ? '💰' : kw.intent === 'urgent' ? '🚨' : 'ℹ️'}</span>
+                      <div style="width:50px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">
+                        <div style="height:100%;background:${cluster.color};width:${Math.min(100, (kw.volume / 165000) * 100)}%"></div>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        
+        <!-- Strategic Insights -->
+        <div style="margin-top:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:15px">
+          <div class="insight-box" style="background:rgba(34,197,94,0.1);border-color:rgba(34,197,94,0.3)">
+            <div class="insight-title" style="color:#4ade80">🎯 Quick Wins (Low Difficulty)</div>
+            <div class="insight-text">
+              ${competitors.keywordClusters.flatMap(c => c.keywords).filter(k => k.difficulty === 'low').sort((a, b) => b.volume - a.volume).slice(0, 4).map(k => `<div style="margin:4px 0">• ${k.term} (${(k.volume/1000).toFixed(1)}K)</div>`).join('')}
+            </div>
+          </div>
+          <div class="insight-box" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.3)">
+            <div class="insight-title" style="color:#a78bfa">📈 Rising Trends</div>
+            <div class="insight-text">
+              ${competitors.keywordClusters.flatMap(c => c.keywords).filter(k => k.trend === 'up').sort((a, b) => b.volume - a.volume).slice(0, 4).map(k => `<div style="margin:4px 0">• ${k.term} ↑</div>`).join('')}
+            </div>
+          </div>
+          <div class="insight-box" style="background:rgba(251,191,36,0.1);border-color:rgba(251,191,36,0.3)">
+            <div class="insight-title" style="color:#fbbf24">💡 Content Opportunities</div>
+            <div class="insight-text">High-volume symptom searches like "leg cramps at night" and "heavy legs" have lower competition — create educational content targeting these.</div>
+          </div>
+        </div>
+        
+        <!-- Legend -->
+        <div style="margin-top:15px;padding-top:15px;border-top:1px solid rgba(255,255,255,0.1);display:flex;gap:20px;justify-content:center;font-size:0.7rem;opacity:0.6">
+          <span>💰 Transactional (ready to convert)</span>
+          <span>🚨 Urgent (immediate need)</span>
+          <span>ℹ️ Informational (research phase)</span>
+          <span>↑ Trending up</span>
         </div>
       </div>
     </div>
