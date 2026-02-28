@@ -145,17 +145,19 @@ const avgEngRate = ((jan.engagementRate + feb.engagementRate) / 2).toFixed(3);
 
 // Main route
 app.get('/', async (req, res) => {
-  // Fetch industry news
-  let industryNews = [], competitorNews = [], trendingTopics = [];
+  // Fetch industry news - focused on clinic states: NY, NJ, CA, MD, CT
+  let industryNews = [], competitorNews = [], localNews = [];
+  const clinicStates = ['New York', 'New Jersey', 'California', 'Maryland', 'Connecticut', 'Long Island'];
+  const stateQuery = clinicStates.map(s => `"${s.replace(' ', '+')}"`).join('+OR+');
   try {
-    const [industry, compNews, trends] = await Promise.all([
+    const [industry, compNews, local] = await Promise.all([
       fetchUrl('https://news.google.com/rss/search?q=varicose+veins+treatment+OR+spider+veins+OR+vein+clinic&hl=en-US&gl=US&ceid=US:en').catch(() => ''),
-      fetchUrl('https://news.google.com/rss/search?q=USA+Vein+Clinics+OR+Center+for+Vein+Restoration+OR+vein+treatment+industry&hl=en-US&gl=US&ceid=US:en').catch(() => ''),
-      fetchUrl('https://news.google.com/rss/search?q=medical+aesthetics+OR+cosmetic+procedures+OR+minimally+invasive+treatment&hl=en-US&gl=US&ceid=US:en').catch(() => '')
+      fetchUrl('https://news.google.com/rss/search?q=USA+Vein+Clinics+OR+Center+for+Vein+Restoration+OR+Metro+Vein+Centers&hl=en-US&gl=US&ceid=US:en').catch(() => ''),
+      fetchUrl(`https://news.google.com/rss/search?q=(vein+clinic+OR+varicose+veins+OR+vein+treatment+OR+vascular+health)+(${stateQuery})&hl=en-US&gl=US&ceid=US:en`).catch(() => '')
     ]);
     industryNews = parseRSS(industry);
     competitorNews = parseRSS(compNews);
-    trendingTopics = parseRSS(trends);
+    localNews = parseRSS(local);
   } catch (e) { console.error('News fetch error:', e.message); }
 
   const html = `
@@ -275,14 +277,14 @@ app.get('/', async (req, res) => {
         </div>
         
         <div class="card card-listen">
-          <div class="card-title">🔥 Medical Aesthetics Trends</div>
+          <div class="card-title">📍 Local Market Intel (NY • NJ • CA • MD • CT)</div>
           <div class="news-list">
-            ${trendingTopics.length > 0 ? trendingTopics.map(n => `
+            ${localNews.length > 0 ? localNews.map(n => `
               <div class="news-item">
                 <a href="${n.link}" target="_blank">${n.title}</a>
                 <div class="news-date">${n.date}</div>
               </div>
-            `).join('') : '<div style="opacity:0.5;padding:20px;text-align:center">Loading trends...</div>'}
+            `).join('') : '<div style="opacity:0.5;padding:20px;text-align:center">Loading local news...</div>'}
           </div>
         </div>
       </div>

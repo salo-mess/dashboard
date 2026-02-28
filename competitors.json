@@ -67,7 +67,7 @@
       ]
     },
     {
-      "name": "Local Intent",
+      "name": "Local Intent (Generic)",
       "icon": "📍",
       "color": "#06b6d4",
       "keywords": [
@@ -76,6 +76,23 @@
         {"term": "vein specialist", "volume": 18100, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
         {"term": "phlebologist near me", "volume": 2400, "difficulty": "low", "intent": "transactional", "trend": "stable"},
         {"term": "varicose vein doctor", "volume": 5400, "difficulty": "medium", "intent": "transactional", "trend": "stable"}
+      ]
+    },
+    {
+      "name": "Your Markets (NY•NJ•CA•MD•CT)",
+      "icon": "🏙️",
+      "color": "#10b981",
+      "keywords": [
+        {"term": "vein clinic NYC", "volume": 2900, "difficulty": "high", "intent": "transactional", "trend": "up"},
+        {"term": "vein doctor Manhattan", "volume": 1300, "difficulty": "medium", "intent": "transactional", "trend": "up"},
+        {"term": "varicose veins Long Island", "volume": 880, "difficulty": "low", "intent": "transactional", "trend": "stable"},
+        {"term": "vein treatment New Jersey", "volume": 1600, "difficulty": "medium", "intent": "transactional", "trend": "up"},
+        {"term": "spider vein removal Los Angeles", "volume": 1900, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "vein clinic California", "volume": 1100, "difficulty": "medium", "intent": "transactional", "trend": "stable"},
+        {"term": "vein specialist Maryland", "volume": 720, "difficulty": "low", "intent": "transactional", "trend": "up"},
+        {"term": "vein doctor Connecticut", "volume": 590, "difficulty": "low", "intent": "transactional", "trend": "stable"},
+        {"term": "sclerotherapy NYC", "volume": 880, "difficulty": "medium", "intent": "transactional", "trend": "up"},
+        {"term": "varicose vein treatment NJ", "volume": 720, "difficulty": "low", "intent": "transactional", "trend": "up"}
       ]
     },
     {
