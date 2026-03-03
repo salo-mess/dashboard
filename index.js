@@ -810,4 +810,4 @@ function generateHTML(industryNews, competitorNews, stateNews, indirectNews, met
 </html>`;
 }
 
-app.listen(PORT, () => console.log(\`Dashboard running on port \${PORT}\`));
+app.listen(PORT, () => console.log(`Dashboard running on port ${PORT}`));
